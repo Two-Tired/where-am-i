@@ -4,7 +4,7 @@
   "description": "A Discord bot to play the picture game 'Where am I?'",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon index.js",
+    "dev": "nodemon index.js | ./node_modules/.bin/pino-pretty",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -17,12 +17,15 @@
     "circle-to-polygon": "^2.2.0",
     "discord.js": "^13.1.0",
     "dotenv": "^10.0.0",
+    "geolib": "^3.3.1",
     "node-fetch": "^2.6.1",
+    "pino": "^6.13.2",
     "postman-request": "^2.88.1-postman.28",
     "yargs": "^16.2.0"
   },
   "devDependencies": {
     "eslint": "^7.32.0",
-    "nodemon": "^2.0.12"
+    "nodemon": "^2.0.12",
+    "pino-pretty": "^6.0.0"
   }
 }
