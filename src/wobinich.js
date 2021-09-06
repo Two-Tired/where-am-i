@@ -82,7 +82,7 @@ const finishGameHandler = async (argv) => {
 
   const resultEmbed = new MessageEmbed()
     .setTitle('Auflösung!')
-    .setURL(`https://www.openstreetmap.org/search?whereami=1&query=${currentQuiz.location.lat}%2C${currentQuiz.location.lon}#map=15/${currentQuiz.location.lat}/${currentQuiz.location.lon}`)
+    .setURL(`https://www.openstreetmap.org/search?whereami=1&query=${currentQuiz.result.lat}%2C${currentQuiz.result.lon}#map=15/${currentQuiz.result.lat}/${currentQuiz.result.lon}`)
     .setImage(currentQuiz.solutionMap.url)
     .addField('Ort', currentQuiz.place_name)
     .addField('Anzahl erfolgreicher Lösungen', currentQuiz.solves.length)
@@ -129,10 +129,11 @@ const guessHandler = async (argv) => {
       time: new Date(),
     });
     const numSolves = currentQuiz.solves.length;
+    const fieldName = `Lösung ${numSolves} um ${currentQuiz.solves[numSolves - 1].time.toLocaleDateString('de-DE', dateOptions)}`
 
     const updatedStartEmbed = new MessageEmbed(currentQuiz.startMessage.embeds[0])
       .setTimestamp()
-      .addField(`Lösung ${numSolves} um ${currentQuiz.solves[numSolves - 1].time.toLocaleDateString('de-DE', dateOptions)}`, msg.author.username);
+      .addField(fieldName, msg.author.username);
 
     await currentQuiz.startMessage.edit({ embeds: [updatedStartEmbed] })
       .then(logger.info('Updated start message with solver.'))
