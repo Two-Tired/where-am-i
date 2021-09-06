@@ -129,11 +129,11 @@ const guessHandler = async (argv) => {
       time: new Date(),
     });
     const numSolves = currentQuiz.solves.length;
-    const fieldName = `Lösung ${numSolves} um ${currentQuiz.solves[numSolves - 1].time.toLocaleDateString('de-DE', dateOptions)}`
+    const fieldName = `Lösung ${numSolves} um ${currentQuiz.solves[numSolves - 1].time.toLocaleDateString('de-DE', dateOptions)}`;
 
     const updatedStartEmbed = new MessageEmbed(currentQuiz.startMessage.embeds[0])
       .setTimestamp()
-      .addField(fieldName, msg.author.username);
+      .addField(fieldName, msg.author.username, numSolves != 1);
 
     await currentQuiz.startMessage.edit({ embeds: [updatedStartEmbed] })
       .then(logger.info('Updated start message with solver.'))
