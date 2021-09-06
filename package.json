@@ -1,0 +1,28 @@
+{
+  "name": "two-tired-discord-bot",
+  "version": "1.0.0",
+  "description": "A Discord bot to play the picture game 'Where am I?'",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "discord",
+    "gaming"
+  ],
+  "author": "Axel <axel.forsch@googlemail.com>",
+  "license": "(Apache-2.0)",
+  "dependencies": {
+    "circle-to-polygon": "^2.2.0",
+    "discord.js": "^13.1.0",
+    "dotenv": "^10.0.0",
+    "node-fetch": "^2.6.1",
+    "postman-request": "^2.88.1-postman.28",
+    "yargs": "^16.2.0"
+  },
+  "devDependencies": {
+    "eslint": "^7.32.0",
+    "nodemon": "^2.0.12"
+  }
+}
