@@ -25,11 +25,22 @@ module.exports = yargs
         describe: 'geographische Breite des Aufnahmeortes (N)',
         float: true,
       })
+      .option('url', {
+        alias: 'u',
+        conflicts: [ 'lat', 'lon' ],
+        describe: 'URL von OpenStreetMaps, Google Maps or www.koordinaten-umrechner.de des Aufnahmeortes.',
+        string: true,
+      })
       .option('radius', {
         alias: 'r',
         demandOption: false,
         describe: 'maximaler Radius um die angegebenen Koordinaten in dem eine Lösung als richtig gilt',
         float: true,
+      })
+      .check(({ lon, lat, url }) => {
+        if (!lon && !lat && !url)
+          throw new Error('Entweder lon-lat oder url müssen gesetzt sein!');
+        return true;
       }),
     wobinich.newGameHandler,
   )

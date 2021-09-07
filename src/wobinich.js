@@ -7,11 +7,17 @@ const mapImage = require('../services/staticMap');
 let currentQuiz = undefined;
 
 const newGameHandler = async (argv) => {
-  const { msg, client, lon, lat, radius } = argv;
+  const { msg, client, lon, lat, radius, url } = argv;
   if (msg.attachments.size != 1)
     return msg.reply('Kein Bild (oder zu viele Bilder) angehangen. Bitte hänge ein Bild, das gesucht werden soll an diese Nachricht an.');
   if (currentQuiz)
     return msg.reply('Es läuft bereits eine Runde von ' + currentQuiz.master.username + '. Bitte warte bis dise abgeschlossen ist bevor du eine neue Runde startest.');
+
+  let solution = { lon, lat };
+  if (url)
+    solution = utils.parseURL(url);
+
+  solution.radius = radius ?? 50;
 
   try {
     currentQuiz = 'lock';
@@ -19,6 +25,7 @@ const newGameHandler = async (argv) => {
     const attachment = msg.attachments.values().next().value;
 
     const { place_name } = await geocode.reverse(lon, lat);
+    solution.place_name = place_name;
 
     const imageBuffer = await mapImage(lon, lat, radius);
 
@@ -26,8 +33,8 @@ const newGameHandler = async (argv) => {
       content: 'Dies ist das Ergebnis `' + place_name + '` das du angegeben hast. Ist dies korrekt?',
       files: [new MessageAttachment(imageBuffer, 'solution.png')],
     });
-    const solutionMap = correctionMessage.attachments.values().next().value;
-
+    solution.map = correctionMessage.attachments.values().next().value;
+    
     const starttime = new Date();
     const startEmbed = new MessageEmbed()
       .setTitle('Eine neue Runde beginnt!')
@@ -37,24 +44,14 @@ const newGameHandler = async (argv) => {
       .setTimestamp();
 
     const startMessage = await channel.send({ embeds: [ startEmbed ] });
-    // const startMessage = await channel.send({
-    //   content: 'Eine neue Runde wurde von ' + msg.author.username + ' gestartet. Sendet eine Nachricht mit "!guess ..." an den Bot, falls ihr denkt die Lösung zu kennen.',
-    //   files: [attachment.url],
-    // });
 
     currentQuiz = {
       master: msg.author, // user that started the picture game
-      result: {
-        lon, // longitude of the location
-        lat, // latitude of the location
-        radius: radius ?? 50,
-      },
+      solution,
       solves: [],
       starttime,
       picture: attachment.url, // url of the picture,
       startMessage,
-      solutionMap,
-      place_name, // name of the location
     };
   } catch (error) {
     logger.error(error);
@@ -73,10 +70,10 @@ const finishGameHandler = async (argv) => {
 
   const resultEmbed = new MessageEmbed()
     .setTitle('Auflösung!')
-    .setURL(`https://www.openstreetmap.org/search?whereami=1&query=${currentQuiz.result.lat}%2C${currentQuiz.result.lon}#map=15/${currentQuiz.result.lat}/${currentQuiz.result.lon}`)
-    .setImage(currentQuiz.solutionMap.url)
-    .addField('Ort', currentQuiz.place_name)
-    .addField('Anzahl erfolgreicher Lösungen', currentQuiz.solves.length)
+    .setURL(`https://www.openstreetmap.org/search?whereami=1&query=${currentQuiz.solution.lat}%2C${currentQuiz.solution.lon}#map=15/${currentQuiz.solution.lat}/${currentQuiz.solution.lon}`)
+    .setImage(currentQuiz.solution.map.url)
+    .addField('Ort', currentQuiz.solution.place_name)
+    .addField('Anzahl erfolgreicher Lösungen', currentQuiz.solves.length.toString())
     .setAuthor(currentQuiz.master.username)
     .setTimestamp()
     .setThumbnail('https://upload.wikimedia.org/wikipedia/commons/thumb/b/b0/Openstreetmap_logo.svg/256px-Openstreetmap_logo.svg.png');
@@ -103,12 +100,12 @@ const guessHandler = async (argv) => {
     // logger.info(longitude);
     // logger.info(latitude);
 
-  const solution = { lon: currentQuiz.result.lon, lat: currentQuiz.result.lat };
+  const solution = { lon: currentQuiz.solution.lon, lat: currentQuiz.solution.lat };
   const distanceFromSolution = utils.getDistance(solution, guess);
 
   logger.info({ guess, solution, distanceFromSolution }, 'New guess received.');
 
-  if (distanceFromSolution <= currentQuiz.result.radius) {
+  if (distanceFromSolution <= currentQuiz.solution.radius) {
     msg.reply(`Herzlichen Glückwunsch, die Lösung ist richtig! Du liegt ${distanceFromSolution} Meter neben den angegebenen Koordinaten.`)
       .then(r => logger.info(`Sent reply '${r.content}''.`))
       .catch(logger.error);
@@ -131,8 +128,8 @@ const guessHandler = async (argv) => {
       logger.error(e);
     }
 
-  } else if (distanceFromSolution <= 2 * currentQuiz.result.radius) {
-    msg.reply(`Deine Lösung ist leider nicht ganz richtig, du bist aber nah dran! Deine Lösung ist maximal ${2 * currentQuiz.result.radius} Meter neben den angegebenen Koordinaten.`)
+  } else if (distanceFromSolution <= 2 * currentQuiz.solution.radius) {
+    msg.reply(`Deine Lösung ist leider nicht ganz richtig, du bist aber nah dran! Deine Lösung ist maximal ${2 * currentQuiz.solution.radius} Meter neben den angegebenen Koordinaten.`)
       .then(r => logger.info(`Sent reply '${r.content}'. Distance to target: ${distanceFromSolution}.`))
       .catch(logger.error);
   } else {
