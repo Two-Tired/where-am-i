@@ -30,9 +30,24 @@ const newGameHandler = async (argv) => {
     const imageBuffer = await mapImage(lon, lat, radius);
 
     const correctionMessage = await msg.reply({
-      content: 'Dies ist das Ergebnis `' + place_name + '` das du angegeben hast. Ist dies korrekt?',
+      content: 'Dies ist das Ergebnis `' + place_name + '` das du angegeben hast. Ist dies korrekt? Dann reagiere mit 👍 auf diese Nachricht.',
       files: [new MessageAttachment(imageBuffer, 'solution.png')],
     });
+
+    await correctionMessage.react('👍');
+    await correctionMessage.react('👎');
+    const filter = (reaction, user) => {
+      return ['👍', '👎'].includes(reaction.emoji.name) && user.id === msg.author.id;;
+    };
+    const collected = await correctionMessage.awaitReactions({ filter, max: 1, time: 300000, errors: ['time'] })
+      
+    const reaction = collected.first();
+    if (reaction.emoji.name === '👍') {
+      await msg.reply('Die Runde wird jetzt gestartet!');
+    } else {
+      await msg.reply('Abbruch, bitte sende mir einen korrigierten Start-Befehl.');
+    }
+
     solution.map = correctionMessage.attachments.values().next().value;
     
     const starttime = new Date();

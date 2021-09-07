@@ -7,7 +7,7 @@ const logger = require('pino')({ level: process.env.LOG_LEVEL || 'info' });
 const parser = require('./src/parser');
 
 const client = new Client({
-  intents: [ Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES, Intents.FLAGS.DIRECT_MESSAGES ],
+  intents: [ Intents.FLAGS.GUILDS, Intents.FLAGS.GUILD_MESSAGES, Intents.FLAGS.DIRECT_MESSAGES, Intents.FLAGS.DIRECT_MESSAGE_REACTIONS ],
   partials: ['MESSAGE', 'REACTION', 'CHANNEL'],
 });
 
