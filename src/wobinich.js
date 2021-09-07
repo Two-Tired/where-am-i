@@ -1,19 +1,10 @@
 const { MessageAttachment, MessageEmbed } = require('discord.js');
 const logger = require('pino')({ level: process.env.LOG_LEVEL || 'info' });
-const geolib = require('geolib');
+const utils = require('../src/utils');
 const geocode = require('../services/geocode');
 const mapImage = require('../services/staticMap');
 
 let currentQuiz = undefined;
-
-const coordFromURLregex = /([0-9]*\.[0-9]*)[,|/|%2C]([0-9]*\.[0-9]*)/;
-const dateOptions = {
-  day: '2-digit',
-  year: 'numeric',
-  month: '2-digit',
-  hour: 'numeric',
-  minute: '2-digit',
-};
 
 const newGameHandler = async (argv) => {
   const { msg, client, lon, lat, radius } = argv;
@@ -42,7 +33,7 @@ const newGameHandler = async (argv) => {
       .setTitle('Eine neue Runde beginnt!')
       .setImage(attachment.url)
       .setAuthor(msg.author.username)
-      .addField('Startzeit', starttime.toLocaleDateString('de-DE', dateOptions))
+      .addField('Startzeit', utils.dateString(starttime))
       .setTimestamp();
 
     const startMessage = await channel.send({ embeds: [ startEmbed ] });
@@ -102,20 +93,18 @@ const guessHandler = async (argv) => {
   //   return msg.reply('Es läuft zur Zeit keine Runde. Du kannst eine neue Runde mit "start" starten.')
   //     .then(r => logger.info(msg, `Sent reply '${r.content}'.`));
 
-  let longitude = lon;
-  let latitude = lat;
-  if (url) {
-    const parsed = url.match(coordFromURLregex);
-    logger.info(parsed);
-    longitude = parseFloat(parsed[2]);
-    latitude = parseFloat(parsed[1]);
-    logger.info(longitude);
-    logger.info(latitude);
-  }
+  let guess = { lon, lat };
+  if (url)
+    guess = utils.parseURL(url);
+    // const parsed = url.match(coordFromURLregex);
+    // logger.info(parsed);
+    // longitude = parseFloat(parsed[2]);
+    // latitude = parseFloat(parsed[1]);
+    // logger.info(longitude);
+    // logger.info(latitude);
 
-  const guess = { longitude, latitude };
-  const solution = { longitude: currentQuiz.result.lon, latitude: currentQuiz.result.lat };
-  const distanceFromSolution = geolib.getDistance(solution, guess);
+  const solution = { lon: currentQuiz.result.lon, lat: currentQuiz.result.lat };
+  const distanceFromSolution = utils.getDistance(solution, guess);
 
   logger.info({ guess, solution, distanceFromSolution }, 'New guess received.');
 
@@ -129,15 +118,19 @@ const guessHandler = async (argv) => {
       time: new Date(),
     });
     const numSolves = currentQuiz.solves.length;
-    const fieldName = `Lösung ${numSolves} um ${currentQuiz.solves[numSolves - 1].time.toLocaleDateString('de-DE', dateOptions)}`;
+    const fieldName = `Lösung ${numSolves} um ${utils.dateString(currentQuiz.solves[numSolves - 1].time)}`;
 
     const updatedStartEmbed = new MessageEmbed(currentQuiz.startMessage.embeds[0])
       .setTimestamp()
       .addField(fieldName, msg.author.username, numSolves != 1);
 
-    await currentQuiz.startMessage.edit({ embeds: [updatedStartEmbed] })
-      .then(logger.info('Updated start message with solver.'))
-      .catch(logger.error);
+    try {
+      currentQuiz.startMessage = await currentQuiz.startMessage.edit({ embeds: [updatedStartEmbed] });
+      logger.info('Updated start message with solver.');
+    } catch (e) {
+      logger.error(e);
+    }
+
   } else if (distanceFromSolution <= 2 * currentQuiz.result.radius) {
     msg.reply(`Deine Lösung ist leider nicht ganz richtig, du bist aber nah dran! Deine Lösung ist maximal ${2 * currentQuiz.result.radius} Meter neben den angegebenen Koordinaten.`)
       .then(r => logger.info(`Sent reply '${r.content}'. Distance to target: ${distanceFromSolution}.`))
