@@ -11,6 +11,8 @@ const dateOptions = {
 
 const parseURL = (url) => {
   const parsed = url.match(coordFromURLregex);
+  if (parsed.length < 3)
+    throw new Error('URL parsing failed');
   const lon = parseFloat(parsed[2]);
   const lat = parseFloat(parsed[1]);
   return { lon, lat };

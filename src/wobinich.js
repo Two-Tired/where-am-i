@@ -1,4 +1,4 @@
-const { MessageAttachment, MessageEmbed } = require('discord.js');
+const { MessageAttachment, MessageEmbed, Message } = require('discord.js');
 const logger = require('pino')({ level: process.env.LOG_LEVEL || 'info' });
 const utils = require('../src/utils');
 const geocode = require('../services/geocode');
@@ -7,25 +7,20 @@ const mapImage = require('../services/staticMap');
 let currentQuiz = undefined;
 
 const newGameHandler = async (argv) => {
-  const { msg, client, lon, lat, radius, url } = argv;
-  if (msg.attachments.size != 1)
-    return msg.reply('Kein Bild (oder zu viele Bilder) angehangen. Bitte hänge ein Bild, das gesucht werden soll an diese Nachricht an.');
+  const { msg, client, lon, lat, radius } = argv;
+
+  if (msg.attachments.size > 1)
+    return msg.reply('Zu viele Bilder angehangen. Bitte hänge maximal ein Bild an diese Nachricht an.');
   if (currentQuiz)
     return msg.reply('Es läuft bereits eine Runde von ' + currentQuiz.master.username + '. Bitte warte bis dise abgeschlossen ist bevor du eine neue Runde startest.');
-
-  let solution = { lon, lat };
-  if (url)
-    solution = utils.parseURL(url);
-
-  solution.radius = radius ?? 50;
 
   try {
     currentQuiz = 'lock';
     const channel = await client.channels.fetch(process.env.WOBINICH_CHANNEL_ID);
-    const attachment = msg.attachments.values().next().value;
+
+    const attachment = await getPicture(msg);
 
     const { place_name } = await geocode.reverse(lon, lat);
-    solution.place_name = place_name;
 
     const imageBuffer = await mapImage(lon, lat, radius);
 
@@ -36,20 +31,24 @@ const newGameHandler = async (argv) => {
 
     await correctionMessage.react('👍');
     await correctionMessage.react('👎');
-    const filter = (reaction, user) => {
-      return ['👍', '👎'].includes(reaction.emoji.name) && user.id === msg.author.id;;
-    };
-    const collected = await correctionMessage.awaitReactions({ filter, max: 1, time: 300000, errors: ['time'] })
-      
-    const reaction = collected.first();
-    if (reaction.emoji.name === '👍') {
-      await msg.reply('Die Runde wird jetzt gestartet!');
-    } else {
-      await msg.reply('Abbruch, bitte sende mir einen korrigierten Start-Befehl.');
+
+    try {
+      const filter = (reaction, user) => {
+        return ['👍', '👎'].includes(reaction.emoji.name) && user.id === msg.author.id;
+      };
+      const collected = await correctionMessage.awaitReactions({ filter, max: 1, time: 300000, errors: ['time'] });
+
+      const reaction = collected.first();
+      if (reaction.emoji.name === '👍') {
+        await msg.reply('Die Runde wird jetzt gestartet!');
+      } else {
+        await msg.reply('Abbruch, bitte sende mir einen korrigierten Start-Befehl.');
+        throw new Error('Abbruch, bitte sende mir einen korrigierten Start-Befehl.');
+      }
+    } catch (e) {
+      logger.info(e.toString());
     }
 
-    solution.map = correctionMessage.attachments.values().next().value;
-    
     const starttime = new Date();
     const startEmbed = new MessageEmbed()
       .setTitle('Eine neue Runde beginnt!')
@@ -62,7 +61,13 @@ const newGameHandler = async (argv) => {
 
     currentQuiz = {
       master: msg.author, // user that started the picture game
-      solution,
+      solution: {
+        lon,
+        lat,
+        map: correctionMessage.attachments.values().next().value,
+        place_name,
+        radius: radius ?? 50,
+      },
       solves: [],
       starttime,
       picture: attachment.url, // url of the picture,
@@ -72,6 +77,55 @@ const newGameHandler = async (argv) => {
     logger.error(error);
     currentQuiz = undefined;
   }
+};
+
+/**
+ * Gets the attached image from the given message or queries for the image in a new message.
+ *
+ * @param {Message} msg message to search for image attachment
+ * @param {object} options options for the query
+ * @returns {MessageAttachment} attached image
+ */
+// const getPicture = async (msg, options = { time: 300000 }) => {
+//   if (msg.attachments.size == 0) {
+//     await msg.reply('Bitte sende das Bild, das gesucht werden soll, als Anhang in einer nächsten Nachricht.');
+//     const filter = (message) => {
+//       return message.attachments.size == 1;
+//     };
+//     const pictureMessage = await msg.author.dmChannel.awaitMessages({ filter, time: options.time, max: 1 });
+//     return pictureMessage.first().attachments.values().next().value;
+//   }
+//   return msg.attachments.values().next().value;
+// };
+
+/**
+ * Gets the attached image from the given message or queries for the image in a new message.
+ *
+ * @param {Message} msg message to search for image attachment
+ * @param {object} options options for the query
+ * @returns {Promise<MessageAttachment>} attached image
+ */
+const getPicture = async (msg, options = { time: 300000 }) => {
+  return new Promise((resolve, reject) => {
+    if (msg.attachments.size == 0)
+      msg.reply('Bitte sende das Bild, das gesucht werden soll, als Anhang in einer nächsten Nachricht.')
+        .then(() => {
+          const filter = (message) => {
+            return message.attachments.size == 1;
+          };
+          msg.author.dmChannel.awaitMessages({ filter, time: options.time, max: 1 })
+            .then(pictureMessage => {
+              if (pictureMessage.first().attachments.values().next().value)
+                resolve(pictureMessage.first().attachments.values().next().value);
+              else
+                reject('no attachment found');
+            })
+            .catch(reject);
+        })
+        .catch(reject);
+    else
+      resolve(msg.attachments.values().next().value);
+  });
 };
 
 const finishGameHandler = async (argv) => {
