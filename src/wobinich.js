@@ -1,4 +1,4 @@
-const { MessageAttachment, MessageEmbed, Message } = require('discord.js');
+const { MessageAttachment, MessageEmbed, MessagePayload } = require('discord.js');
 const logger = require('pino')({ level: process.env.LOG_LEVEL || 'info' });
 const utils = require('../src/utils');
 const geocode = require('../services/geocode');
@@ -17,37 +17,18 @@ const newGameHandler = async (argv) => {
   try {
     currentQuiz = 'lock';
     const channel = await client.channels.fetch(process.env.WOBINICH_CHANNEL_ID);
-
+    
     const attachment = await getPicture(msg);
-
+    
     const { place_name } = await geocode.reverse(lon, lat);
 
     const imageBuffer = await mapImage(lon, lat, radius);
 
-    const correctionMessage = await msg.reply({
+    await confirmationMessage(msg, {
       content: 'Dies ist das Ergebnis `' + place_name + '` das du angegeben hast. Ist dies korrekt? Dann reagiere mit 👍 auf diese Nachricht.',
       files: [new MessageAttachment(imageBuffer, 'solution.png')],
     });
-
-    await correctionMessage.react('👍');
-    await correctionMessage.react('👎');
-
-    try {
-      const filter = (reaction, user) => {
-        return ['👍', '👎'].includes(reaction.emoji.name) && user.id === msg.author.id;
-      };
-      const collected = await correctionMessage.awaitReactions({ filter, max: 1, time: 300000, errors: ['time'] });
-
-      const reaction = collected.first();
-      if (reaction.emoji.name === '👍') {
-        await msg.reply('Die Runde wird jetzt gestartet!');
-      } else {
-        await msg.reply('Abbruch, bitte sende mir einen korrigierten Start-Befehl.');
-        throw new Error('Abbruch, bitte sende mir einen korrigierten Start-Befehl.');
-      }
-    } catch (e) {
-      logger.info(e.toString());
-    }
+    await msg.reply('Die Runde wird jetzt gestartet!');
 
     const starttime = new Date();
     const startEmbed = new MessageEmbed()
@@ -74,7 +55,7 @@ const newGameHandler = async (argv) => {
       startMessage,
     };
   } catch (error) {
-    logger.error(error);
+    logger.info('newGameHandler stopped with message: ' + error);
     currentQuiz = undefined;
   }
 };
@@ -82,51 +63,63 @@ const newGameHandler = async (argv) => {
 /**
  * Gets the attached image from the given message or queries for the image in a new message.
  *
- * @param {Message} msg message to search for image attachment
- * @param {object} options options for the query
- * @returns {MessageAttachment} attached image
- */
-// const getPicture = async (msg, options = { time: 300000 }) => {
-//   if (msg.attachments.size == 0) {
-//     await msg.reply('Bitte sende das Bild, das gesucht werden soll, als Anhang in einer nächsten Nachricht.');
-//     const filter = (message) => {
-//       return message.attachments.size == 1;
-//     };
-//     const pictureMessage = await msg.author.dmChannel.awaitMessages({ filter, time: options.time, max: 1 });
-//     return pictureMessage.first().attachments.values().next().value;
-//   }
-//   return msg.attachments.values().next().value;
-// };
-
-/**
- * Gets the attached image from the given message or queries for the image in a new message.
- *
- * @param {Message} msg message to search for image attachment
+ * @param {import('discord.js').Message} msg message to search for image attachment
  * @param {object} options options for the query
  * @returns {Promise<MessageAttachment>} attached image
  */
 const getPicture = async (msg, options = { time: 300000 }) => {
-  return new Promise((resolve, reject) => {
-    if (msg.attachments.size == 0)
-      msg.reply('Bitte sende das Bild, das gesucht werden soll, als Anhang in einer nächsten Nachricht.')
-        .then(() => {
-          const filter = (message) => {
-            return message.attachments.size == 1;
-          };
-          msg.author.dmChannel.awaitMessages({ filter, time: options.time, max: 1 })
-            .then(pictureMessage => {
-              if (pictureMessage.first().attachments.values().next().value)
-                resolve(pictureMessage.first().attachments.values().next().value);
-              else
-                reject('no attachment found');
-            })
-            .catch(reject);
-        })
-        .catch(reject);
-    else
-      resolve(msg.attachments.values().next().value);
-  });
-};
+  if (msg.attachments.size == 0) {
+    const queryMsg = await msg.reply('Bitte sende das Bild, das gesucht werden soll, als Anhang in einer nächsten Nachricht.')
+    logger.info('Queried user for the image');
+
+    const filter = (message) => {
+      return message.attachments.size == 1;
+    };
+
+    return msg.author.dmChannel.awaitMessages({ filter, time: options.time, max: 1 })
+      .then(pictureMessage => {
+        if (!pictureMessage.first()) {
+          logger.info('No message received');
+          queryMsg.reply('Keine Nachricht mit genau einem Bild im Anhang erhalten. Abbruch.')
+          return Promise.reject('No message with exactly one attachment received')
+        }
+        logger.info('Reveiced image', pictureMessage.first().attachments.values().next().value)
+        return pictureMessage.first().attachments.values().next().value;
+      });
+  }  
+  logger.info('Image in original message', msg.attachments.values().next().value)
+  return new Promise().resolve(msg.attachments.values().next().value);
+}
+
+/**
+ * Asks for a confirmation of the provided data.
+ * 
+ * @param {import('discord.js').Message} msg message that should be confirmed
+ * @param {string|import('discord.js').MessageOptions|MessagePayload} messageContent content of the confirmation message
+ * @param {object} options options for the query
+ * @returns {Promise<void>} whether message got confirmed
+ */
+const confirmationMessage = async (msg, messageContent, options = { time: 300000 }) => {
+  const confirmationMessage = await msg.reply(messageContent);
+  await confirmationMessage.react('👍');
+  await confirmationMessage.react('👎');
+
+  try {
+    const filter = (reaction, user) => {
+      return ['👍', '👎'].includes(reaction.emoji.name) && user.id === msg.author.id;
+    };
+    const collected = await confirmationMessage.awaitReactions({ filter, max: 1, time: options.time, errors: ['time'] });
+
+    const reaction = collected.first();
+    if (reaction.emoji.name === '👍') {
+      return Promise.resolve();
+    } else {
+      return Promise.reject('Negative reaction');
+    }
+  } catch (e) {
+    return Promise.reject('No reaction received')
+  }
+}
 
 const finishGameHandler = async (argv) => {
   const { msg, client } = argv;
@@ -154,27 +147,17 @@ const finishGameHandler = async (argv) => {
 };
 
 const guessHandler = async (argv) => {
-  const { msg, lon, lat, url } = argv;
-  // if (!currentQuiz)
-  //   return msg.reply('Es läuft zur Zeit keine Runde. Du kannst eine neue Runde mit "start" starten.')
-  //     .then(r => logger.info(msg, `Sent reply '${r.content}'.`));
+  const { msg, lon, lat } = argv;
+  if (!currentQuiz)
+    return msg.reply('Es läuft zur Zeit keine Runde. Du kannst eine neue Runde mit "start" starten.')
+      .then(r => logger.info(msg, `Sent reply '${r.content}'.`));
 
-  let guess = { lon, lat };
-  if (url)
-    guess = utils.parseURL(url);
-    // const parsed = url.match(coordFromURLregex);
-    // logger.info(parsed);
-    // longitude = parseFloat(parsed[2]);
-    // latitude = parseFloat(parsed[1]);
-    // logger.info(longitude);
-    // logger.info(latitude);
-
-  const solution = { lon: currentQuiz.solution.lon, lat: currentQuiz.solution.lat };
+  const { solution } = currentQuiz;
   const distanceFromSolution = utils.getDistance(solution, guess);
 
   logger.info({ guess, solution, distanceFromSolution }, 'New guess received.');
 
-  if (distanceFromSolution <= currentQuiz.solution.radius) {
+  if (distanceFromSolution <= solution.radius) {
     msg.reply(`Herzlichen Glückwunsch, die Lösung ist richtig! Du liegt ${distanceFromSolution} Meter neben den angegebenen Koordinaten.`)
       .then(r => logger.info(`Sent reply '${r.content}''.`))
       .catch(logger.error);
@@ -190,21 +173,14 @@ const guessHandler = async (argv) => {
       .setTimestamp()
       .addField(fieldName, msg.author.username, numSolves != 1);
 
-    try {
-      currentQuiz.startMessage = await currentQuiz.startMessage.edit({ embeds: [updatedStartEmbed] });
-      logger.info('Updated start message with solver.');
-    } catch (e) {
-      logger.error(e);
-    }
-
+    currentQuiz.startMessage = await currentQuiz.startMessage.edit({ embeds: [updatedStartEmbed] });
+    logger.info('Updated start message with solver.');
   } else if (distanceFromSolution <= 2 * currentQuiz.solution.radius) {
-    msg.reply(`Deine Lösung ist leider nicht ganz richtig, du bist aber nah dran! Deine Lösung ist maximal ${2 * currentQuiz.solution.radius} Meter neben den angegebenen Koordinaten.`)
-      .then(r => logger.info(`Sent reply '${r.content}'. Distance to target: ${distanceFromSolution}.`))
-      .catch(logger.error);
+    return msg.reply(`Deine Lösung ist leider nicht ganz richtig, du bist aber nah dran! Deine Lösung ist maximal ${2 * currentQuiz.solution.radius} Meter neben den angegebenen Koordinaten.`)
+      .then(r => logger.info(`Sent reply '${r.content}'. Distance to target: ${distanceFromSolution}.`));
   } else {
-    msg.reply('Deine Lösung ist leider falsch. Probiere es aber gerne noch einmal.')
-      .then(r => logger.info(`Sent reply '${r.content}'. Distance to target: ${distanceFromSolution}.`))
-      .catch(logger.error);
+    return msg.reply('Deine Lösung ist leider falsch. Probiere es aber gerne noch einmal.')
+      .then(r => logger.info(`Sent reply '${r.content}'. Distance to target: ${distanceFromSolution}.`));
   }
 };
 
